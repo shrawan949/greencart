@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: greencart-backend
+  namespace: greencart
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: greencart-backend
+  template:
+    metadata:
+      labels:
+        app: greencart-backend
+    spec:
+      containers:
+        - name: backend
+          image: shrawanambarte0101/greencart-backend:1
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4000
+          env:
+            - name: PORT
+              value: "4000"
+            - name: NODE_ENV
+              value: "production"
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: greencart-secrets
+                  key: MONGODB_URI
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: greencart-secrets
+                  key: JWT_SECRET
+            - name: CLIENT_URL
+              value: "http://13.205.67.13:30081"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 4000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
