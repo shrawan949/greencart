@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import axios from "axios";
 
 axios.defaults.withCredentials = true;
-axios.defaults.baseURL = import.meta.env.VITE_BACKEND_URL;
+axios.defaults.baseURL = import.meta.env.VITE_BACKEND_URL || "";
 
 export const AppContext = createContext();
 
@@ -39,7 +39,7 @@ export const AppContextProvider = ({children})=>{
     // Fetch User Auth Status , User Data and Cart Items
 const fetchUser = async ()=>{
     try {
-        const {data} = await axios.get('api/user/is-auth');
+        const {data} = await axios.get('/api/user/is-auth');
         if (data.success){
             setUser(data.user)
             setCartItems(data.user.cartItems)
