@@ -1,4 +1,4 @@
-
+```groovy
 pipeline {
     agent any
 
@@ -13,26 +13,23 @@ pipeline {
         BACKEND_IMAGE     = 'shrawanambarte0101/greencart-backend'
         FRONTEND_IMAGE    = 'shrawanambarte0101/greencart-frontend'
         K8S_NAMESPACE     = 'greencart'
-        BACKEND_DEPLOYMENT = 'greencart-backend'
-        FRONTEND_DEPLOYMENT = 'greencart-frontend'
         SONAR_PROJECT_KEY = 'greencart'
-        BACKEND_DIR       = 'server'
-        FRONTEND_DIR      = 'client'
         PATH              = "/usr/bin:/usr/local/bin:${env.PATH}"
     }
 
     stages {
-        stage('Checkout and Validate') {
+        stage('Checkout') {
             steps {
                 checkout scm
 
                 sh '''
                     set -eu
 
-                    test -f "${BACKEND_DIR}/package.json"
-                    test -f "${BACKEND_DIR}/Dockerfile"
-                    test -f "${FRONTEND_DIR}/package.json"
-                    test -f "${FRONTEND_DIR}/Dockerfile"
+                    test -f client/package.json
+                    test -f client/Dockerfile
+                    test -f server/package.json
+                    test -f server/Dockerfile
+                    test -d kubernetes
 
                     echo "GreenCart source files validated."
                 '''
@@ -41,14 +38,10 @@ pipeline {
 
         stage('Build Frontend') {
             steps {
-                dir("${FRONTEND_DIR}") {
+                dir('client') {
                     sh '''
                         set -eu
-                        if [ -f package-lock.json ]; then
-                            npm ci
-                        else
-                            npm install
-                        fi
+                        npm ci
                         npm run build
                     '''
                 }
@@ -57,17 +50,23 @@ pipeline {
 
         stage('Check Backend') {
             steps {
-                dir("${BACKEND_DIR}") {
+                dir('server') {
                     sh '''
                         set -eu
+                        npm ci
 
-                        if [ -f package-lock.json ]; then
-                            npm ci
+                        # Syntax-check the backend entry point.
+                        if [ -f server.js ]; then
+                            node --check server.js
+                        elif [ -f index.js ]; then
+                            node --check index.js
+                        elif [ -f src/index.js ]; then
+                            node --check src/index.js
                         else
-                            npm install
+                            echo "Backend entry point not found."
+                            exit 1
                         fi
 
-                        node --check server.js
                         npm run test --if-present
                     '''
                 }
@@ -95,8 +94,8 @@ pipeline {
                                     "$SONAR_SCANNER" \
                                       -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
                                       -Dsonar.projectName=GreenCart \
-                                      -Dsonar.sources=server,client/src \
-                                      -Dsonar.exclusions=**/node_modules/**,**/dist/** \
+                                      -Dsonar.sources=client/src,server \
+                                      -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/coverage/** \
                                       -Dsonar.sourceEncoding=UTF-8 \
                                       -Dsonar.token="$SONAR_TOKEN"
                                 '''
@@ -113,19 +112,19 @@ pipeline {
                     set -eu
 
                     docker build \
-                      -t "${BACKEND_IMAGE}:${BUILD_NUMBER}" \
-                      "${BACKEND_DIR}"
+                      -t ${BACKEND_IMAGE}:${BUILD_NUMBER} \
+                      server
 
                     docker build \
-                      -t "${FRONTEND_IMAGE}:${BUILD_NUMBER}" \
-                      "${FRONTEND_DIR}"
+                      -t ${FRONTEND_IMAGE}:${BUILD_NUMBER} \
+                      client
 
                     docker images
                 '''
             }
         }
 
-        stage('Push Images to Docker Hub') {
+        stage('Push to Docker Hub') {
             steps {
                 withCredentials([
                     usernamePassword(
@@ -142,14 +141,14 @@ pipeline {
                           --username "$DOCKER_USER" \
                           --password-stdin
 
-                        docker push "${BACKEND_IMAGE}:${BUILD_NUMBER}"
-                        docker push "${FRONTEND_IMAGE}:${BUILD_NUMBER}"
+                        docker push ${BACKEND_IMAGE}:${BUILD_NUMBER}
+                        docker push ${FRONTEND_IMAGE}:${BUILD_NUMBER}
                     '''
                 }
             }
         }
 
-        stage('Verify Kubernetes') {
+        stage('Verify Kubernetes Connection') {
             steps {
                 withCredentials([
                     file(
@@ -165,7 +164,6 @@ pipeline {
                         kubectl get namespace "$K8S_NAMESPACE"
                         kubectl get deployments -n "$K8S_NAMESPACE"
                         kubectl get pods -n "$K8S_NAMESPACE"
-                        kubectl get services -n "$K8S_NAMESPACE"
                     '''
                 }
             }
@@ -183,29 +181,25 @@ pipeline {
                         set -eu
                         export KUBECONFIG="$KUBECONFIG_FILE"
 
-                        kubectl set image \
-                          deployment/"$BACKEND_DEPLOYMENT" \
-                          backend="${BACKEND_IMAGE}:${BUILD_NUMBER}" \
+                        kubectl set image deployment/greencart-backend \
+                          backend=${BACKEND_IMAGE}:${BUILD_NUMBER} \
                           -n "$K8S_NAMESPACE"
 
-                        kubectl set image \
-                          deployment/"$FRONTEND_DEPLOYMENT" \
-                          frontend="${FRONTEND_IMAGE}:${BUILD_NUMBER}" \
+                        kubectl set image deployment/greencart-frontend \
+                          frontend=${FRONTEND_IMAGE}:${BUILD_NUMBER} \
                           -n "$K8S_NAMESPACE"
 
-                        kubectl rollout status \
-                          deployment/"$BACKEND_DEPLOYMENT" \
+                        kubectl rollout status deployment/greencart-backend \
                           -n "$K8S_NAMESPACE" --timeout=180s
 
-                        kubectl rollout status \
-                          deployment/"$FRONTEND_DEPLOYMENT" \
+                        kubectl rollout status deployment/greencart-frontend \
                           -n "$K8S_NAMESPACE" --timeout=180s
 
                         kubectl get deployments -n "$K8S_NAMESPACE"
                         kubectl get pods -n "$K8S_NAMESPACE" -o wide
                         kubectl get services -n "$K8S_NAMESPACE"
 
-                        echo "GreenCart deployment completed."
+                        echo "GreenCart deployment completed successfully."
                     '''
                 }
             }
@@ -214,7 +208,7 @@ pipeline {
 
     post {
         success {
-            echo 'SUCCESS: GreenCart built, scanned, pushed and deployed.'
+            echo 'SUCCESS: GreenCart build, SonarQube analysis, Docker push and Kubernetes deployment completed.'
         }
 
         failure {
@@ -222,8 +216,8 @@ pipeline {
         }
 
         always {
-            echo "GreenCart pipeline build: ${BUILD_NUMBER}"
+            echo "GreenCart pipeline build number: ${BUILD_NUMBER}"
         }
     }
 }
-
+```
