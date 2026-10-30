@@ -1,0 +1,14 @@
+[kubernetes-master]
+k8s-master ansible_host=172.31.41.214
+
+[kubernetes-worker]
+k8s-worker1 ansible_host=172.31.34.86
+k8s-worker2 ansible_host=172.31.39.110
+k8s-worker3 ansible_host=172.31.47.134
+
+[kubernetes:children]
+kubernetes-master
+kubernetes-worker
+
+[kubernetes:vars]
+ansible_user=ec2-user
